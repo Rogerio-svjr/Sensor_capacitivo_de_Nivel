@@ -7,6 +7,7 @@ unsigned long clockTrigger = 0;
 unsigned long tempSubida = 0;
 unsigned long tempDescida = 0;
 unsigned long tempBotao = 0;
+unsigned long tempCalib = 0;
 // Variáveis de estado / flags
 bool triggerState = LOW;
 bool tempFlag = false;    // verdadeira se a primeira borda de subida foi salva, garante que a 1ª leitura feita seja de uma borda de subida
@@ -14,13 +15,26 @@ bool highFlag = false;    // Verdadeira se a leitura que era HIGH ainda não aba
 bool lowFlag = false;     // Verdadeira se a leitura que era LOW ainda não subiu para HIGH
 bool buttonFlag = false;  // Verdadeiro se o botão foi apertado e ainda não foi solto
 bool debounceFlag = false;// Verdadeiro se o debounce já foi feito
-bool calibracao = false;  // Verdadeira se a calibração já foi realizada
+bool calibFlag = false;   // Verdadeira se a calibração já foi realizada
+bool minFlag = false;     // Verdadeira se o valor mínimo de capacitância da calibração foi salvo
+bool maxFlag = false;     // Verdadeira se o valor máximo de capacitância da calibração foi salvo
 // Variáveis de lógica
-float t = 0; // intervalo de tempo entre as bordas de subida da saída do 555
-float Ra = 100000;
-float C = 0;
+float t = 0;        // intervalo de tempo entre as bordas de subida da saída do 555
+float Ra = 100000;  // Valor da resistência ligada entre a saída e o trigger do 555
+float C = 0, Cmin = 0, Cmax = 0;
+float Vmax = 5000, V = 0;
 
-int medeTempo(int pinOut) { // Intervalo entre bordas de subida e de descida
+void triggerClock(void) { // Chamar em toda estrutura de repetição
+  // Clock do trigger: inverte o estatdo de saída a cada 100ms -> perído = 200ms -> 5 amostras por segundo
+  if((millis() - clockTrigger) > 100){    // Se a diferença do tempo de agora com a última vez que o trigger foi acionado é maior que 100ms
+    triggerState = !triggerState;           // Inverte o estado do trigger
+    digitalWrite(TRIGGER, triggerState);    // Aciona o trigger
+    clockTrigger = millis();                // Atualiza o tempo da última mudança de estado
+    //Serial.println(clockState);
+  }
+}
+
+int medeTempo(int pinOut) { // Intervalo entre bordas de subida e de descida -> Chamar em toda estrutura de repetição
   int tDiff = 0;
   if (digitalRead(pinOut) == HIGH && !highFlag) { // Se a saída estiver em nível alto e ainda for a mesma leitura,
     highFlag = true;      // Mantém a flag de ativa para não salvar valores novos nas variáveis
@@ -34,8 +48,16 @@ int medeTempo(int pinOut) { // Intervalo entre bordas de subida e de descida
     tempDescida = millis(); // Salva o valor do tempo
     tDiff = tempDescida - tempSubida; // Calcula o tempo em que a saída ficou em nível alto
     //Serial.println(tDiff);
-    return tDiff; // Retorna o valor
+    return tDiff; // Retorna o valor (ms)
   }
+}
+
+void calculaCap(void) {
+  float t = medeTempo(OUT);
+  t = t / 1000;
+  //Serial.print(t);
+  //Serial.println(" s");
+  C = t / (1.1 * Ra) * 100000; // Cálculo da capacitância em uF
 }
 
 bool debounce (int pinPushButton) {
@@ -55,10 +77,6 @@ bool debounce (int pinPushButton) {
   return LOW;
 }
 
-void calibragem (void) {
-  ;
-}
-
 void setup() {
   Serial.begin(9600);
   // Inicialização dos pinos
@@ -68,23 +86,25 @@ void setup() {
 }
 
 void loop() {
-  // Clock do trigger: inverte o estatdo de saída a cada 100ms -> perído = 200ms -> 5 amostras por segundo
-  if((millis() - clockTrigger) > 100){    // Se a diferença do tempo de agora com a última vez que o trigger foi acionado é maior que 100ms
-    triggerState = !triggerState;           // Inverte o estado do trigger
-    digitalWrite(TRIGGER, triggerState);    // Aciona o trigger
-    clockTrigger = millis();                // Atualiza o tempo da última mudança de estado
-    //Serial.println(clockState);
-  }
+  triggerClock();
+  calculaCap();
 
-  float t = medeTempo(OUT); // medeTempo retorna o intervalo de tempo entre as bordas de subida e de descida em milissegundos
-  t = t / 1000; // Transforma em segundos
-  C = t / (1.1 * Ra) * 1000000; // Cálculo da capacitância em uF
-  //Serial.print(C);
-  //Serial.println(" uF");
-
-  if (debounce(PUSH_BUTTON)) {
-    Serial.println("debug");
+  if (!calibFlag) {
+    if (debounce(PUSH_BUTTON) && !minFlag) {
+      Cmin = C;
+      minFlag = true;
+      Serial.println(Cmin);
+    }
+    if (debounce(PUSH_BUTTON) && !maxFlag && minFlag) {
+      Cmax = C;
+      maxFlag = true;      
+    }
+    if (minFlag && maxFlag) {
+      calibFlag = true;
+    }
   } else {
-    ;
+    V = Vmax * ((C - Cmin) / (Cmax - Cmin));
+    Serial.print(V);
+    Serial.println(" ml");
   }
 }
