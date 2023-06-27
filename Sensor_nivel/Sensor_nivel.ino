@@ -20,9 +20,9 @@ bool minFlag = false;     // Verdadeira se o valor mínimo de capacitância da c
 bool maxFlag = false;     // Verdadeira se o valor máximo de capacitância da calibração foi salvo
 // Variáveis de lógica
 float t = 0;        // intervalo de tempo entre as bordas de subida da saída do 555
-float Ra = 100000;  // Valor da resistência ligada entre a saída e o trigger do 555
+float Ra = 100;  // Valor da resistência ligada entre a saída e o trigger do 555
 float C = 0, Cmin = 0, Cmax = 0;
-float Vmax = 5000, V = 0;
+float Nmax = 10, N = 0;
 
 void triggerClock(void) { // Chamar em toda estrutura de repetição
   // Clock do trigger: inverte o estatdo de saída a cada 100ms -> perído = 200ms -> 5 amostras por segundo
@@ -37,15 +37,15 @@ void triggerClock(void) { // Chamar em toda estrutura de repetição
 int medeTempo(int pinOut) { // Intervalo entre bordas de subida e de descida -> Chamar em toda estrutura de repetição
   int tDiff = 0;
   if (digitalRead(pinOut) == HIGH && !highFlag) { // Se a saída estiver em nível alto e ainda for a mesma leitura,
+    tempSubida = millis();  //Salva o valor do tempo
     highFlag = true;      // Mantém a flag de ativa para não salvar valores novos nas variáveis
     lowFlag = false;      // Desativa a lowFlag
     tempFlag = true;      // Ativa a flag que garante que a 1ª leitura foi feita
-    tempSubida = millis();  //Salva o valor do tempo
   }
   if (digitalRead(pinOut) == LOW && !lowFlag && tempFlag) { // Se a saída estiver em nível baixo, ainda for a mesma leitura, e NÃO for a 1ª leitura
+    tempDescida = millis(); // Salva o valor do tempo
     lowFlag = true;       // Mantém a flag de ativa para não salvar valores novos nas variáveis
     highFlag = false;     // Desativa a lowFlag
-    tempDescida = millis(); // Salva o valor do tempo
     tDiff = tempDescida - tempSubida; // Calcula o tempo em que a saída ficou em nível alto
     //Serial.println(tDiff);
     return tDiff; // Retorna o valor (ms)
@@ -54,10 +54,11 @@ int medeTempo(int pinOut) { // Intervalo entre bordas de subida e de descida -> 
 
 void calculaCap(void) {
   float t = medeTempo(OUT);
-  t = t / 1000;
+  t = t / 1000; // Transforma em segundos
   //Serial.print(t);
   //Serial.println(" s");
-  C = t / (1.1 * Ra) * 100000; // Cálculo da capacitância em uF
+  C = t / (1.1 * Ra) * 1000000; // Cálculo da capacitância em uF
+  //Serial.println(C);
 }
 
 bool debounce (int pinPushButton) {
@@ -97,14 +98,15 @@ void loop() {
     }
     if (debounce(PUSH_BUTTON) && !maxFlag && minFlag) {
       Cmax = C;
-      maxFlag = true;      
+      maxFlag = true; 
+      Serial.println(Cmax);     
     }
     if (minFlag && maxFlag) {
       calibFlag = true;
     }
   } else {
-    V = Vmax * ((C - Cmin) / (Cmax - Cmin));
-    Serial.print(V);
-    Serial.println(" ml");
+    N = Nmax * ((C - Cmin) / (Cmax - Cmin));
+    Serial.print(N);
+    Serial.println(" cm");
   }
 }
